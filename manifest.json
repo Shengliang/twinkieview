@@ -1,0 +1,22 @@
+{
+  "manifest_version": 2,
+  "name": "USBplay",
+  "short_name": "USBplay",
+  "description": "Description for USBplay",
+
+  "version": "0.0.1.0",
+
+  "icons": {
+    "16": "assets/icon_16.png",
+    "128": "assets/icon_128.png"
+  },
+
+  "app": {
+    "background": {
+      "scripts": ["background.js"]
+    }
+  },
+
+  "permissions": ["usb",
+                  {"usbDevices": [{"vendorId": 6353, "productId": 20490}]}]
+}
