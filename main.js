@@ -4,10 +4,14 @@ var twinkieId = 20490; //0x500a
 var DEVICE_INFO = {"vendorId": googleId, "productId": twinkieId};
 var requestButton = document.getElementById("requestPermission");
 var captureButton = document.getElementById("capture");
+var adcButton = document.getElementById("adc");
+var cc1State = document.getElementById("cc1");
+var cc2State = document.getElementById("cc2");
+
 var captureSize = 10000;
 var capBuf = new Uint8Array(captureSize);
 var capInsert = 0;
-
+var respCb = null;
 var chOut;
 var chIn;
 var chCap;
@@ -25,20 +29,33 @@ function keyToTw(event) {
   } else {
     int8View[0] = event.charCode;
   }
-  var transInfo = { "direction": "out", "endpoint": 2, "data": a };
+  var transInfo = { "direction": "out", "endpoint": 1, "data": a };
 
   chrome.usb.bulkTransfer(chOut, transInfo, function() {
     console.log("Out done");
   });
 }
 
+function cmdToTw(cmd, cb) {
+  console.log("Send command " + cmd);
+  var a = new ArrayBuffer(cmd.length + 1);
+  var int8View = new Int8Array(a);
+  for (i=0; i<cmd.length; i++) int8View[i] = cmd.charCodeAt(i) & 0xFF;
+  int8View[cmd.length] = 10;
+  var transInfo = { "direction": "out", "endpoint": 1, "data": a };
+  respCb = cb;
+  chrome.usb.bulkTransfer(chOut, transInfo, function() {
+    console.log("Cmd Out done");
+  });
+}
+
 function onCapIn(info) {
   if (info.resultCode != 0) {
-      console.log("onConIn: result code "+info.resultCode);
+      console.log("onCapIn: result code "+info.resultCode);
       console.log(chrome.runtime.lastError);
       if (info.resultCode != 6) return;
   } else {
-    console.log("onConIn: length " + info.data.byteLength);
+    console.log("onCapIn: length " + info.data.byteLength);
     var intView = new Uint8Array(info.data)
     for(i=0; i < info.data.byteLength; i++) {
       capBuf[capInsert++] = intView[i];
@@ -70,6 +87,10 @@ function onCapIn(info) {
   }
 }
 
+var capResp = 0;
+var respBuf = "";
+var onNL = 0;
+
 function onConIn(info) {
   var decodedString = "";
   if (info.resultCode != 0) {
@@ -83,8 +104,28 @@ function onConIn(info) {
     for(i=0; i < info.data.byteLength; i++) {
       if (intView[i] == 10) {
           decodedString += "<br/>";
+          onNL = 1;
       } else {
-        decodedString += String.fromCharCode(intView[i]);
+        var decodedChar = String.fromCharCode(intView[i]);
+        decodedString += decodedChar;
+        if (onNL) {
+          if (decodedChar == ">") {
+            if (respCb == null) {
+              console.log("Response " + respBuf);
+            } else {
+              // callback might set a new respCb...
+              var tocall = respCb;
+              respCb = null;
+              tocall(respBuf);
+            }
+            respBuf = "";
+            capResp = 0;
+          } else {
+            capResp = 1;
+          }
+          onNL = 0;
+        }
+        if (capResp) respBuf += decodedChar;
       }
     }
   }
@@ -173,8 +214,28 @@ requestButton.addEventListener('click', function() {
 //  });
 
 
-
-
   document.querySelector('#greeting').innerText =
     'Hello, World! It is ' + new Date();
 });
+
+
+function ccAdcToRval(adcRes) {
+  var mV = adcRes.replace(/.*= /, "");
+  console.log("In mV cc is " + mV);
+  if (mV > 2100) return "DFP NC";
+  if (mV > 1230) return "vRd-3.0";
+  if (mV > 0660) return "vRd-1.5";
+  if (mV > 0200) return "vRd-USB";
+  return "vRa / UFP NC";
+}
+
+adcButton.addEventListener('click', function() {
+  cmdToTw("adc CC1_PD", function(res) {
+    cc1State.innerHTML = ccAdcToRval(res);
+    cmdToTw("adc CC2_PD", function(res1) {
+        cc2State.innerHTML = ccAdcToRval(res1);
+    });
+  });
+});
+
+
