@@ -9,7 +9,7 @@ var cc1State = document.getElementById("cc1");
 var cc2State = document.getElementById("cc2");
 
 var capSize = 10000;
-var ccEdges = 100;
+var ccEdges = 2000;
 var capBuf = new Uint8Array(capSize);
 var capInsert = 0;
 var respCb = null;
@@ -20,6 +20,73 @@ var chCap;
 var conInTransInfo = { "direction": "in", "endpoint": 1, "length": 64 };
 var capInTransInfo = { "direction": "in", "endpoint": 3, "length": 64 };
 
+var dec5b = new Array(
+/* Error    */ 0x10 /* 00000 */,
+/* Error    */ 0x10 /* 00001 */,
+/* Error    */ 0x10 /* 00010 */,
+/* Error    */ 0x10 /* 00011 */,
+/* Error    */ 0x10 /* 00100 */,
+/* Error    */ 0x10 /* 00101 */,
+/* Error    */ 0x10 /* 00110 */,
+/* RST-1    */ 0x13 /* 00111 K-code: Hard Reset #1 */,
+/* Error    */ 0x10 /* 01000 */,
+/* 1 = 0001 */ 0x01 /* 01001 */,
+/* 4 = 0100 */ 0x04 /* 01010 */,
+/* 5 = 0101 */ 0x05 /* 01011 */,
+/* Error    */ 0x10 /* 01100 */,
+/* EOP      */ 0x15 /* 01101 K-code: EOP End Of Packet */,
+/* 6 = 0110 */ 0x06 /* 01110 */,
+/* 7 = 0111 */ 0x07 /* 01111 */,
+/* Error    */ 0x10 /* 10000 */,
+/* Sync-2   */ 0x12 /* 10001 K-code: Startsynch #2 */,
+/* 8 = 1000 */ 0x08 /* 10010 */,
+/* 9 = 1001 */ 0x09 /* 10011 */,
+/* 2 = 0010 */ 0x02 /* 10100 */,
+/* 3 = 0011 */ 0x03 /* 10101 */,
+/* A = 1010 */ 0x0A /* 10110 */,
+/* B = 1011 */ 0x0B /* 10111 */,
+/* Sync-1   */ 0x11 /* 11000 K-code: Startsynch #1 */,
+/* RST-2    */ 0x14 /* 11001 K-code: Hard Reset #2 */,
+/* C = 1100 */ 0x0C /* 11010 */,
+/* D = 1101 */ 0x0D /* 11011 */,
+/* E = 1110 */ 0x0E /* 11100 */,
+/* F = 1111 */ 0x0F /* 11101 */,
+/* 0 = 0000 */ 0x00 /* 11110 */,
+/* Error    */ 0x10 /* 11111 */);
+
+var dec5str = new Array(
+"Error" /* 00000 */,
+"Error" /* 00001 */,
+"Error" /* 00010 */,
+"Error" /* 00011 */,
+"Error" /* 00100 */,
+"Error" /* 00101 */,
+"Error" /* 00110 */,
+"RST-1" /* 00111 K-code: Hard Reset #1 */,
+"Error" /* 01000 */,
+"Dat-1" /* 01001 */,
+"Dat-4" /* 01010 */,
+"Dat-5" /* 01011 */,
+"Error" /* 01100 */,
+"EOP--" /* 01101 K-code: EOP End Of Packet */,
+"Dat-6" /* 01110 */,
+"Dat-7" /* 01111 */,
+"Error" /* 10000 */,
+"Syn-2" /* 10001 K-code: Startsynch #2 */,
+"Dat-8" /* 10010 */,
+"Dat-9" /* 10011 */,
+"Dat-2" /* 10100 */,
+"Dat-3" /* 10101 */,
+"Dat-A" /* 10110 */,
+"Dat-B" /* 10111 */,
+"Syn-1" /* 11000 K-code: Startsynch #1 */,
+"RST-2" /* 11001 K-code: Hard Reset #2 */,
+"Dat-C" /* 11010 */,
+"Dat-D" /* 11011 */,
+"Dat-E" /* 11100 */,
+"Dat-F" /* 11101 */,
+"Dat-0" /* 11110 */,
+"Error" /* 11111 */);
 
 function keyToTw(event) {
   console.log("Send " + event.charCode);
@@ -63,6 +130,98 @@ var capPad = new Array(0,0,0,0);
 var capDelta = new Array(new Uint32Array(ccEdges+64), new Uint32Array(ccEdges+64));
 var capPos = new Array(0,0,0,0);
 
+
+function postProcess() {
+    var ccdump = new Array("", "", "", "");
+    var ccfake = new Array("", "", "", "");
+
+    // TODO: Eventually remove the raw info
+    var dumpsize = (capInsert > capSize) ? capSize : capInsert;
+    var lastTime = 0;
+    var dump = "";
+
+    for (i=0; i < dumpsize; i++) {
+      if ((i & 63) == 0) {
+        var sampleTime = (capBuf[i+3]<<8) + capBuf[i+2];
+        var timeDiff = (i==0) ? 0 : sampleTime - lastTime;
+        var seqf = (capBuf[i+1]<<8) + capBuf[i];
+        var cc = (seqf >> 12) & 0x3;
+        var seq = seqf & 0xfff;
+        var ofw = (seqf & 0x8000) ? "*" : " ";
+        lastTime = sampleTime;
+        dump += "<br/>CC" + (cc+1) + " " + ofw + seq + " " + seqf.toString(16);
+        //i += 3;
+      } else {
+        if (capBuf[i] < 16)
+          dump += " 0" + capBuf[i].toString(16);
+        else
+          dump += " " + capBuf[i].toString(16);
+      }
+    }
+    for(var cc=0; cc < 2; cc++) {
+      var bits = 0;
+      var bitcount = 0;
+      var inpacket = false;
+      var half1 = false;
+      for (i = 0; i < capPos[cc]; i++) {
+        //Clock is 2.4MHz so one tick is 417ns
+        //Encoded zero is one 300kHZ sample wide or 3333ns (8 samples)
+        //Encoded one has edge in middle so 1667,1667 (4,4 samples)
+        //DRP toggle min 30% of 50ms (35971 samples)
+        //DRP toggle max 70% of 100ms (167866 samples)
+        var delta = capDelta[cc][i];
+        var found = "???";
+        var decdata = ".....";
+        if (delta > 35971) {
+          if (delta < 167866) found="DRP";
+          bits=0;
+          bitcount=0;
+          inpacket=false;
+        }
+        if ((delta > 6) && (delta < 10)) {
+          found="EN0";
+          bits = bits>>1;
+          bitcount++;
+        }
+        if ((delta > 2) && (delta < 6)) {
+          if (half1) {
+            found = "EN1";
+            half1 = false;
+            bits = 16 + (bits>>1);
+            bitcount++;
+          } else {
+            found = "...";
+            half1 = true;
+          }
+        } else half1 = false;
+        if (!half1) {
+          if (inpacket) {
+            if (bitcount >= 5)
+            {
+              decdata = dec5str[bits];
+              bitcount=0;
+              if (decdata == "EOP--") inpacket=false;
+            }
+          } else {
+            if (dec5b[bits] == 0x11) {
+              decdata = dec5str[bits];
+              bitcount = 0;
+              inpacket = true;
+            }
+          }
+        }
+        ccdump[cc] += decdata + (inpacket ? "." : " ") + found + " +" + delta + " " + bits.toString(2) + "<BR>";
+        ccfake[cc] += delta + ",";
+        if ((i & 7) == 7) ccfake[cc] += "<BR>&nbsp;&nbsp;";
+      }
+    }
+    document.getElementById("capturedump").innerHTML = dump +
+      "<BR><B>CC1</B><BR>" + ccdump[0] + "<BR><B>CC2</B><BR>" + ccdump[1] +
+      "<BR>ccfake[0]<br>&nbsp;&nbsp;" + ccfake[0] +
+      "<BR>ccfake[1]<br>&nbsp;&nbsp;" + ccfake[1];
+
+}
+
 function onCapIn(info) {
   if (info.resultCode != 0) {
       console.log("onCapIn: result code "+info.resultCode);
@@ -79,13 +238,20 @@ function onCapIn(info) {
           capPad[capCC]++;
         } else {
           var pad = 256 * capPad[capCC];
-          if ((dat < capLast[capCC]) || (dat == 0xff)) pad += 256;
+          // Get one extra sample when it hits 0xff, so capPad will be 1
+          // So no need to compensate when dat < capLast[capCC]
+          // because capPad will equal 1
+          // seen a case of 235, 239, 248, 0
+          if ((pad == 0) && (dat < capLast[capCC])) pad = 256;
           if (capCC < 2)
             capDelta[capCC][capPos[capCC]++] = pad + dat - capLast[capCC];
+          if (capDelta[capCC][capPos[capCC]-1] > 500000)
+            console.log("CHECK" + capCC + " " + pad + "+" + dat + "-" + capLast[capCC] + " capPad=" + capPad[capCC] + " " + i + "d" + intView[i-3] +" "+ intView[i-2] +" "+ intView[i-1]);
           capLast[capCC] = dat;
           capPad[capCC] = 0;
         }
       }
+      // TODO: No need to do raw capture but keep for now
       if (capInsert < capSize) capBuf[capInsert] = dat;
       capInsert++;
     }
@@ -95,58 +261,10 @@ function onCapIn(info) {
     chrome.usb.bulkTransfer(chCap, capInTransInfo, onCapIn);
     return;
   } else {
-    var dump = "";
-    var lastTime = 0;
-    var cc = 0;
-    var ccstate = new Array(0,0,0,0);
-    var cctime = new Array(0,0,0,0);
-    var cclastval = new Array(0,0,0,0);
-    var ccpad = new Array(0,0,0,0);
-    var ccdump = new Array("", "", "", "");
-    var cmp = new Array(0,0,0,0);
-    var dumpsize = (capInsert > capSize) ? capSize : capInsert;
-
-    for (i=0; i < dumpsize; i++) {
-      if ((i & 63) == 0) {
-        var sampleTime = (capBuf[i+3]<<8) + capBuf[i+2];
-        var timeDiff = (i==0) ? 0 : sampleTime - lastTime;
-        var seqf = (capBuf[i+1]<<8) + capBuf[i];
-        cc = (seqf >> 12) & 0x3;
-        var seq = seqf & 0xfff;
-        var ofw = (seqf & 0x8000) ? "*" : " ";
-        lastTime = sampleTime;
-        // dump += "<br/>CC" + (cc+1) + " " + sampleTime + " " + capBuf[i+1].toString(16) + " " + timeDiff;
-        dump += "<br/>CC" + (cc+1) + " " + ofw + seq + " " + seqf.toString(16);
-        //i += 3;
-      } //else {
-      if ((i & 63) > 3) {
-        if (capBuf[i] == cclastval[cc]) {
-          ccpad[cc]++;
-        } else {
-          var pad = 256 * ccpad[cc];
-          if ((capBuf[i] < cclastval[cc]) || (capBuf[i] == 0xff)) pad += 256;
-          var deltat = pad + capBuf[i] - cclastval[cc];
-          cctime[cc] += deltat;
-          cclastval[cc] = capBuf[i];
-          ccpad[cc] = 0;
-          ccstate[cc] = ccstate[cc] ^ 1;
-          ccdump[cc] += ccstate[cc] + " +" + deltat + " " + capDelta[cc][cmp[cc]++] + " " + cctime[cc] + "<br>";
-          dump += ccstate[cc] + " +" + deltat + " ";
-        }
-      }
-        if (capBuf[i] < 16)
-          dump += " 0" + capBuf[i].toString(16);
-        else
-          dump += " " + capBuf[i].toString(16);
-      //}
-    }
-    for(i=0; i < 2; i++) while (cmp[i] < capPos[i]) {
-        ccdump[i] += ". +" + capDelta[i][cmp[i]++] + "<BR>";
-    }
-    document.getElementById("capturedump").innerHTML = dump + "<BR><B>CC1</B><BR>" + ccdump[0] + "<BR><B>CC2</B><BR>" + ccdump[1];
     chrome.usb.releaseInterface(chCap, 3, function() {
-    console.log("Released interface 3");
-  });
+      console.log("Released interface 3");
+    });
+    postProcess();
   }
 }
 
@@ -195,6 +313,7 @@ function onConIn(info) {
   console.log("String " + decodedString);
   var conOut = document.getElementById("outarea");
   conOut.insertAdjacentHTML("beforeEnd", decodedString);
+  conOut.scrollTop = conOut.scrollHeight;
   chrome.usb.bulkTransfer(chIn, conInTransInfo, onConIn);
 }
 

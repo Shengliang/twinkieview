@@ -10,13 +10,15 @@
     <button id="requestPermission">Find Twinkie</button>
     <b>CC1-Rd:</b><input id="rd1" type="checkbox">
     <button id="capture">Capture</button>
+    <button id="fake">Fake Capture</button>
     <button id="adc">Adc</button>
     <b>CC1:</b><span id="cc1"></span>&nbsp;
     <b>CC2:</b><span id="cc2"></span>&nbsp;
 
   <script src="main.js"></script>
-  <p id="capturedump" style="font-family: monospace;">Capture<br/></p>
+  <script src="fakecapture.js"></script>
+  <p id="capturedump" style="font-family: monospace; -webkit-user-select:text; height:400px; overflow-y:auto">Capture<br/></p>
   <hr>
-  <p id="outarea" style="font-family: monospace;">Output area<br/></p>
+  <p id="outarea" style="font-family: monospace; -webkit-user-select:text; height:200px; overflow-y:auto">Output area<br/></p>
 </body>
 </html>
