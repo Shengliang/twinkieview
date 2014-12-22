@@ -134,6 +134,10 @@ var capPos = new Array(0,0,0,0);
 function postProcess() {
     var ccdump = new Array("", "", "", "");
     var ccfake = new Array("", "", "", "");
+    var flip = new Array("<tr>", "<tr>", "", "");
+    var fou = new Array("<tr>", "<tr>", "", "");
+    var ddat = new Array("<tr>", "<tr>", "", "");
+    var twidth = new Array(0,0,0,0);
 
     // TODO: Eventually remove the raw info
     var dumpsize = (capInsert > capSize) ? capSize : capInsert;
@@ -163,6 +167,8 @@ function postProcess() {
       var bitcount = 0;
       var inpacket = false;
       var half1 = false;
+      var ndec = 1;
+      var nfou = 1;
       for (i = 0; i < capPos[cc]; i++) {
         //Clock is 2.4MHz so one tick is 417ns
         //Encoded zero is one 300kHZ sample wide or 3333ns (8 samples)
@@ -207,16 +213,46 @@ function postProcess() {
               decdata = dec5str[bits];
               bitcount = 0;
               inpacket = true;
+              ddat[cc] += "<td colspan=" + (ndec-7) + "></td>";
+              ndec=7;
             }
           }
         }
-        ccdump[cc] += decdata + (inpacket ? "." : " ") + found + " +" + delta + " " + bits.toString(2) + "<BR>";
+        //ccdump[cc] += decdata + (inpacket ? "." : " ") + found + " +" + delta + " " + bits.toString(2) + "<BR>";
+        if (delta < 200) {
+          flip[cc] += "<td width=" + (delta*3) + "px></td>";
+          twidth[cc] += (delta*3)+1;
+        } else {
+          flip[cc] += "<td width=600px>.." + delta + "..</td>";
+          twidth[cc] += 601;
+        }
+        if (found != "...") {
+          fou[cc] += "<td colspan=" + nfou + ">" + found + "</td>";
+          nfou = 1;
+        } else {
+          nfou++;
+        }
+        if (decdata != ".....") {
+          ddat[cc] += "<td colspan=" + ndec +
+                      (inpacket ? " bgcolor=green>":">") + decdata + "</td>";
+          ndec = 1;
+        } else {
+          ndec++;
+        }
         ccfake[cc] += delta + ",";
         if ((i & 7) == 7) ccfake[cc] += "<BR>&nbsp;&nbsp;";
       }
     }
     document.getElementById("capturedump").innerHTML = dump +
-      "<BR><B>CC1</B><BR>" + ccdump[0] + "<BR><B>CC2</B><BR>" + ccdump[1] +
+      //"<BR><B>CC1</B><BR>" + ccdump[0] + "<BR><B>CC2</B><BR>" + ccdump[1] +
+      "<BR><B>CC1</B><table border width=" + twidth[0] + ">" +
+      flip[0] + "</tr>" +
+      fou[0] + "</tr>" +
+      ddat[0] + "</tr></table>" +
+      "<BR><B>CC2</B><table border width=" + twidth[1] + ">" +
+      flip[1] + "</tr>" +
+      fou[1] + "</tr>" +
+      ddat[1] + "</tr></table>" +
       "<BR>ccfake[0]<br>&nbsp;&nbsp;" + ccfake[0] +
       "<BR>ccfake[1]<br>&nbsp;&nbsp;" + ccfake[1];
 
