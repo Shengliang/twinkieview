@@ -131,7 +131,7 @@ var capDelta = new Array(new Uint32Array(ccEdges+64), new Uint32Array(ccEdges+64
 var capPos = new Array(0,0,0,0);
 
 
-function postProcess() {
+function postProcess_old() {
     var ccdump = new Array("", "", "", "");
     var ccfake = new Array("", "", "", "");
     var flip = new Array("<tr>", "<tr>", "", "");
@@ -223,8 +223,8 @@ function postProcess() {
           flip[cc] += "<td width=" + (delta*3) + "px></td>";
           twidth[cc] += (delta*3)+1;
         } else {
-          flip[cc] += "<td width=600px>.." + delta + "..</td>";
-          twidth[cc] += 601;
+          flip[cc] += "<td width=300px>.." + delta + "..</td>";
+          twidth[cc] += 301;
         }
         if (found != "...") {
           fou[cc] += "<td colspan=" + nfou + ">" + found + "</td>";
@@ -257,6 +257,151 @@ function postProcess() {
       "<BR>ccfake[1]<br>&nbsp;&nbsp;" + ccfake[1];
 
 }
+
+function decpkt(p, len) {
+  var pp = "";
+  for(var i=0; i < len; i++) pp += p[i].toString(16) + " ";
+  return pp;
+}
+
+function postProcess() {
+    var ccdump = new Array("", "", "", "");
+    var ccfake = new Array("", "", "", "");
+    var dump = "";
+    var packet = new Uint8Array(64);
+    var pktoff = 0;
+
+    for(var cc=0; cc < 2; cc++) {
+      var flip = "<tr>";
+      var fou = "<tr>";
+      var ddat = "<tr>";
+      var dpkt = "<tr>";
+      var twidth = 0;
+
+      var bits = 0;
+      var bitcount = 0;
+      var inpacket = false;
+      var indrp = false;
+      var half1 = false;
+      var ndec = 1;
+      var nfou = 1;
+      var npkt = 1;
+
+      var nextnew = false;
+      dump += "<BR><B>CC" + (cc+1) + "</B><BR>"
+      for (var i = 0; i < capPos[cc]; i++) {
+        //Clock is 2.4MHz so one tick is 417ns
+        //Encoded zero is one 300kHZ sample wide or 3333ns (8 samples)
+        //Encoded one has edge in middle so 1667,1667 (4,4 samples)
+        //DRP toggle min 30% of 50ms (35971 samples)
+        //DRP toggle max 70% of 100ms (167866 samples)
+        var delta = capDelta[cc][i];
+        var found = "???";
+        var decdata = ".....";
+        var newsect = nextnew;
+        nextnew = false;
+
+        if (delta > 35971) {
+          if (delta < 167866) {
+            found="DRP";
+            if (!indrp) {indrp = true; newsect = true; }
+          }
+          bits=0;
+          bitcount=0;
+          if (inpacket) {inpacket=false; newsect = true; }
+        }
+        if ((delta > 6) && (delta < 10)) {
+          found="EN0";
+          bits = bits>>1;
+          bitcount++;
+          if (indrp) {indrp = false; newsect = true; }
+        }
+        if ((delta > 2) && (delta < 6)) {
+          if (indrp) {indrp = false; newsect = true; }
+          if (half1) {
+            found = "EN1";
+            half1 = false;
+            bits = 16 + (bits>>1);
+            bitcount++;
+          } else {
+            found = "...";
+            half1 = true;
+          }
+        } else half1 = false;
+        if (!half1) {
+          if (inpacket) {
+            if (bitcount >= 5)
+            {
+              decdata = dec5str[bits];
+              packet[pktoff++] = dec5b[bits];
+              bitcount=0;
+            }
+          } else {
+            if (dec5b[bits] == 0x11) {
+              decdata = dec5str[bits];
+              packet[0] = 0x11;
+              pktoff = 1;
+              npkt = 1;
+              bitcount = 0;
+              inpacket = true;
+              ddat += "<td colspan=" + (ndec-7) + "></td>";
+              dpkt += "<td colspan=" + (ndec-7) + "></td>";
+              ndec=7;
+            }
+          }
+        }
+        if (newsect || (i == (capPos[cc] - 1))) {
+          dump += "<table border width=" + twidth + ">" +
+                  flip + "</tr>" +
+                  fou + "</tr>" +
+                  ddat + "</tr>" +
+                  dpkt + "</tr>" +
+                  "</table><p></p>";
+          flip = "<tr>";
+          fou = "<tr>";
+          ddat = "<tr>";
+          dpkt = "<tr>";
+          twidth = 0;
+          nfou = 1;
+          ndec = 1;
+        }
+        if (delta < 200) {
+          flip += "<td width=" + (delta*3) + "px></td>";
+          twidth += (delta*3)+1;
+        } else {
+          flip += "<td width=300px>.." + delta + "..</td>";
+          twidth += 301;
+        }
+        if (found != "...") {
+          fou += "<td colspan=" + nfou + ">" + found + "</td>";
+          nfou = 1;
+        } else {
+          nfou++;
+        }
+        if (decdata != ".....") {
+          ddat += "<td colspan=" + ndec +
+                      (inpacket ? " bgcolor=green>":">") + decdata + "</td>";
+          npkt += ndec;
+          ndec = 1;
+          if (decdata == "EOP--") {
+            inpacket=false;
+            nextnew = true;
+            dpkt += "<td colspan=" + npkt + ">" + decpkt(packet, pktoff) + "</td>";
+          }
+        } else {
+          ndec++;
+        }
+        ccfake[cc] += delta + ",";
+        if ((i & 7) == 7) ccfake[cc] += "<BR>&nbsp;&nbsp;";
+      }
+    }
+    document.getElementById("capturedump").innerHTML = dump +
+      "<BR>ccfake[0]<br>&nbsp;&nbsp;" + ccfake[0] +
+      "<BR>ccfake[1]<br>&nbsp;&nbsp;" + ccfake[1];
+
+}
+
+
 
 function onCapIn(info) {
   if (info.resultCode != 0) {
