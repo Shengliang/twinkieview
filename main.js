@@ -13,6 +13,7 @@ var ccEdges = 2000;
 var capBuf = new Uint8Array(capSize);
 var capInsert = 0;
 var respCb = null;
+var respN = 0;
 var chOut;
 var chIn;
 var chCap;
@@ -104,23 +105,26 @@ function keyToTw(event) {
   });
 }
 
-function cmdToTw(cmd, cb) {
+function cmdToTw(cmd, nval, cb) {
   console.log("Send command " + cmd);
   var tosend = cmd.length + 1;
   var sp = 0;
-  while (tosend > 0) {
-    var sblksize = (tosend > 14) ? 14 : tosend;
+//  while (tosend > 0) {
+    var sblksize = (tosend > 7) ? 7 : tosend;
     var a = new ArrayBuffer(sblksize);
     var cbuf = new Int8Array(a);
     for (i=0; i<(sblksize-1); i++) cbuf[i] = cmd.charCodeAt(sp++) & 0xFF;
     cbuf[sblksize-1] = (sp == cmd.length) ? 10 : cmd.charCodeAt(sp++) & 0xFF;
     var transInfo = { "direction": "out", "endpoint": 1, "data": a };
     respCb = cb;
+    respN = nval;
     chrome.usb.bulkTransfer(chOut, transInfo, function() {
       console.log("Cmd Out done");
+      tosend -= sblksize;
+      if (tosend > 0) setTimeout(function(){cmdToTw(cmd.substr(1-tosend), nval, cb);}, 100);
     });
-    tosend -= sblksize;
-  }
+//    tosend -= sblksize;
+//  }
 }
 
 var capCC = 0;
@@ -478,7 +482,8 @@ function onConIn(info) {
               // callback might set a new respCb...
               var tocall = respCb;
               respCb = null;
-              tocall(respBuf);
+              //console.log("Callback " + respBuf);
+              tocall(respBuf, respN);
             }
             respBuf = "";
             capResp = 0;
@@ -503,12 +508,14 @@ function startTwConIn(chandle) {
     console.log("Claimed interface 1");
     chIn = chandle;
     chrome.usb.bulkTransfer(chIn, conInTransInfo, onConIn);
-  });
-  chrome.usb.claimInterface(chandle, 2, function() {
-    console.log("Claimed interface 2");
     chOut = chandle;
     window.onkeypress = keyToTw;
   });
+//  chrome.usb.claimInterface(chandle, 2, function() {
+//    console.log("Claimed interface 2");
+//    chOut = chandle;
+//    window.onkeypress = keyToTw;
+//  });
 }
 
 function onOpenTw(chandle) {
@@ -576,10 +583,7 @@ requestButton.addEventListener('click', function() {
 //      console.log(chrome.runtime.lastError);
 //    }
 //  });
-
-
-  document.querySelector('#greeting').innerText =
-    'Hello, World! It is ' + new Date();
+  requestButton.innerText="Connected";
 });
 
 
@@ -594,9 +598,9 @@ function ccAdcToRval(adcRes) {
 }
 
 adcButton.addEventListener('click', function() {
-  cmdToTw("adc CC1_PD", function(res) {
+  cmdToTw("adc CC1_PD", 0, function(res, n) {
     cc1State.innerHTML = ccAdcToRval(res);
-    cmdToTw("adc CC2_PD", function(res1) {
+    cmdToTw("adc CC2_PD", 0, function(res1, n) {
         cc2State.innerHTML = ccAdcToRval(res1);
     });
   });
@@ -607,9 +611,64 @@ var rd1Button = document.getElementById("rd1");
 rd1Button.addEventListener('click', function() {
   console.log("Got rd1 state is " + rd1Button.checked);
   if (rd1Button.checked)
-    cmdToTw("gpioset CC1_RD 0", function(){});
+    cmdToTw("gpioset CC1_RD 0", 0, function(){});
   else
-    cmdToTw("gpioset CC1_RD 1", function(){});
+    cmdToTw("gpioset CC1_RD 1", 0, function(){});
 });
 
+var rd2Button = document.getElementById("rd2");
 
+rd2Button.addEventListener('click', function() {
+  console.log("Got rd2 state is " + rd2Button.checked);
+  if (rd2Button.checked)
+    cmdToTw("gpioset CC2_RD 0", 0, function(){});
+  else
+    cmdToTw("gpioset CC2_RD 1", 0, function(){});
+});
+
+var foundn;
+function rp1loop(res, n) {
+  if (n == 1) foundn = 0;
+  if (n > 3) {
+    if (foundn) cmdToTw("gpioset " + foundn + " 1", n, function(){});
+    return;
+  }
+  var radio = document.getElementById("rp1-" + n);
+  if (radio.checked) {
+    console.log("Got Rp1 checked for " + radio.value);
+    foundn = radio.value;
+    rp1loop("", n+1);
+  } else
+    cmdToTw("gpioset " + radio.value + " 0", n+1, rp1loop);
+}
+
+function rp1() {
+  rp1loop("", 1);
+}
+document.getElementById("rp1-0").onchange = rp1;
+document.getElementById("rp1-1").onchange = rp1;
+document.getElementById("rp1-2").onchange = rp1;
+document.getElementById("rp1-3").onchange = rp1;
+
+function rp2loop(res, n) {
+  if (n == 1) foundn = 0;
+  if (n > 3) {
+    if (foundn) cmdToTw("gpioset " + foundn + " 1", n, function(){});
+    return;
+  }
+  var radio = document.getElementById("rp2-" + n);
+  if (radio.checked) {
+    console.log("Got Rp2 checked for " + radio.value);
+    foundn = radio.value;
+    rp2loop("", n+1);
+  } else
+    cmdToTw("gpioset " + radio.value + " 0", n+1, rp2loop);
+}
+
+function rp2() {
+  rp2loop("", 1);
+}
+document.getElementById("rp2-0").onchange = rp2;
+document.getElementById("rp2-1").onchange = rp2;
+document.getElementById("rp2-2").onchange = rp2;
+document.getElementById("rp2-3").onchange = rp2;

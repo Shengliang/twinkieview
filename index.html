@@ -6,11 +6,22 @@
 </head>
 
 <body>
-  <h1 id="greeting">&nbsp;</h1>
     <button id="requestPermission">Find Twinkie</button>
-    <b>CC1-Rd:</b><input id="rd1" type="checkbox">
     <button id="capture">Capture</button>
     <button id="fake">Fake Capture</button>
+    <BR>
+    <b>CC1-Rd:</b><input id="rd1" type="checkbox"><b>CC1-Rp</b>
+    <input id="rp1-0" type="radio" name="rp1" value="0">Open
+    <input id="rp1-1" type="radio" name="rp1" value="CC1_RPUSB">Std
+    <input id="rp1-2" type="radio" name="rp1" value="CC1_RP1A5">1.5A
+    <input id="rp1-3" type="radio" name="rp1" value="CC1_RP3A0">3A
+    <BR>
+    <b>CC2-Rd:</b><input id="rd2" type="checkbox"><b>CC2-Rp</b>
+    <input id="rp2-0" type="radio" name="rp1" value="0">Open
+    <input id="rp2-1" type="radio" name="rp1" value="CC2_RPUSB">Std
+    <input id="rp2-2" type="radio" name="rp1" value="CC2_RP1A5">1.5A
+    <input id="rp2-3" type="radio" name="rp1" value="CC2_RP3A0">3A
+    <BR>
     <button id="adc">Adc</button>
     <b>CC1:</b><span id="cc1"></span>&nbsp;
     <b>CC2:</b><span id="cc2"></span>&nbsp;
